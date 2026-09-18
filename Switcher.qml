@@ -53,7 +53,9 @@ Item {
   property int activePreview: -1
   property int pendingPreview: -1
   readonly property bool previewWanted: root.opened && root.selectedToplevel !== null && !!root.selectedToplevel.wayland
-  readonly property var previewTarget: root.previewWanted ? root.selectedToplevel.wayland : null
+  // Diagnostic: freeze the capture target after opening. Selection may move,
+  // but screencopy does not. This isolates selection rendering from capture.
+  property var previewTarget: null
   // Once a preview has appeared, keep the pane mounted for the rest of this
   // opening. selectedToplevel.wayland can change or briefly be unavailable
   // while selection moves; that must not collapse and rebuild the card.
@@ -181,6 +183,7 @@ Item {
     }
 
     root.previewAvailable = false
+    root.previewTarget = null
     root.activePreview = -1
     root.pendingPreview = -1
     root.previewSourceA = null
@@ -192,6 +195,7 @@ Item {
     root.refresh()
     if (root.cycleMode && root.rows.length > 1 && Model.isCurrent(root.rows[0]))
       root.selectedIndex = direction < 0 ? root.rows.length - 1 : 1
+    root.previewTarget = root.previewWanted ? root.selectedToplevel.wayland : null
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
