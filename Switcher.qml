@@ -88,16 +88,15 @@ Item {
   function queuePreview(source) {
     if (!root.opened || !source) return
 
-    // If the selected window is already on screen, keep it there and ignore
-    // any stale in-flight capture in the standby buffer.
-    if (root.activePreview === 0 && root.previewSourceA === source) {
-      root.pendingPreview = -1
-      return
-    }
-    if (root.activePreview === 1 && root.previewSourceB === source) {
-      root.pendingPreview = -1
-      return
-    }
+    // Already showing the requested source.
+    if (root.activePreview === 0 && root.previewSourceA === source) return
+    if (root.activePreview === 1 && root.previewSourceB === source) return
+
+    // Do not repeatedly retarget a ScreencopyView while a frame is in flight.
+    // Arrow-key navigation can change selection much faster than screencopy
+    // produces frames. previewTarget always tracks the newest selection, so
+    // previewReady() will coalesce any intermediate selections into the latest.
+    if (root.pendingPreview >= 0) return
 
     var next = root.activePreview === 0 ? 1 : 0
     if (root.activePreview < 0) next = 0
@@ -113,10 +112,26 @@ Item {
     if (root.pendingPreview !== index) return
 
     var source = index === 0 ? root.previewSourceA : root.previewSourceB
-    if (!source || source !== root.previewTarget) return
+    if (!source) return
 
-    // Swap only after the new source has a frame. Keep the previous buffer
-    // alive behind it; it becomes the standby buffer for the next selection.
+    // Selection may have moved again while this frame was being captured.
+    // In that case, keep the current preview visible and reuse this same
+    // standby buffer for only the newest target.
+    if (source !== root.previewTarget) {
+      if (!root.previewTarget) {
+        root.pendingPreview = -1
+        return
+      }
+
+      if (index === 0)
+        root.previewSourceA = root.previewTarget
+      else
+        root.previewSourceB = root.previewTarget
+      return
+    }
+
+    // Swap only after the latest selected source has a frame. Keep the
+    // previous buffer alive behind it as the standby for the next selection.
     root.activePreview = index
     root.pendingPreview = -1
     root.previewAvailable = true
