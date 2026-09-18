@@ -14,9 +14,10 @@ import "Model.js" as Model
 // selection through the native Wayland toplevel API, with hyprctl as fallback.
 //
 // The right side shows a live preview (Windows-11-style "peek") of the
-// highlighted window via a single ScreencopyView bound to that window's
-// Wayland toplevel handle. One live stream, not one per window. If the
-// compositor lacks the hyprland-toplevel-export protocol (or the view gets
+// highlighted window via two alternating ScreencopyViews. The current frame
+// stays visible while the inactive view starts capturing the next selection,
+// then the views swap once the new frame is ready. If the compositor lacks the
+// hyprland-toplevel-export protocol (or the views get no frames),
 // no frames), hasContent stays false and the list simply stays full-width —
 // the same layout as the plain list version.
 
@@ -47,8 +48,15 @@ Item {
   // rebuildRows() gets to clamp selectedIndex.
   readonly property var selectedToplevel: selectedIndex >= 0 && selectedIndex < rows.length ? rows[selectedIndex] : null
   property bool previewAvailable: false
+  property var previewSourceA: null
+  property var previewSourceB: null
+  property int activePreview: -1
+  property int pendingPreview: -1
   readonly property bool previewWanted: root.opened && root.selectedToplevel !== null && !!root.selectedToplevel.wayland
+  readonly property var previewTarget: root.previewWanted ? root.selectedToplevel.wayland : null
   readonly property bool previewActive: root.previewWanted && root.previewAvailable
+
+  onPreviewTargetChanged: root.queuePreview(previewTarget)
 
   readonly property int cardWidth: Math.min(root.previewActive ? Style.space(1080) : Style.space(760), panel.width - Style.gapsOut * 2)
   readonly property int desiredListHeight: Math.max(root.rowHeight, rows.length * root.rowHeight)
@@ -75,6 +83,48 @@ Item {
   property color selectedText: Color.menu.selectedText
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
+
+  function queuePreview(source) {
+    if (!root.opened || !source) return
+
+    // If the user cycles back to the frame already on screen, keep it and
+    // cancel any in-flight capture in the other buffer.
+    if (root.activePreview === 0 && root.previewSourceA === source) {
+      root.pendingPreview = -1
+      root.previewSourceB = null
+      return
+    }
+    if (root.activePreview === 1 && root.previewSourceB === source) {
+      root.pendingPreview = -1
+      root.previewSourceA = null
+      return
+    }
+
+    var next = root.activePreview === 0 ? 1 : 0
+    if (root.activePreview < 0) next = 0
+
+    root.pendingPreview = next
+    if (next === 0)
+      root.previewSourceA = source
+    else
+      root.previewSourceB = source
+  }
+
+  function previewReady(index) {
+    if (root.pendingPreview !== index) return
+
+    var source = index === 0 ? root.previewSourceA : root.previewSourceB
+    if (!source || source !== root.previewTarget) return
+
+    var previous = root.activePreview
+    root.activePreview = index
+    root.pendingPreview = -1
+    root.previewAvailable = true
+
+    // Stop capturing the old window only after the new frame is on screen.
+    if (previous === 0 && index !== 0) root.previewSourceA = null
+    if (previous === 1 && index !== 1) root.previewSourceB = null
+  }
 
   function rebuildRows() {
     rows = Model.filteredWindows(allWindows, filterText)
@@ -123,6 +173,10 @@ Item {
     }
 
     root.previewAvailable = false
+    root.activePreview = -1
+    root.pendingPreview = -1
+    root.previewSourceA = null
+    root.previewSourceB = null
     root.opened = true
     root.cycleMode = payload.mode === "cycle"
     root.filterText = ""
@@ -274,9 +328,10 @@ Item {
           }
         }
 
-        // Right-side peek pane. Wait for the first frame once per opening,
-        // then keep the layout stable while captureSource changes. Switching
-        // sources can briefly clear hasContent while the next stream starts.
+        // Right-side peek pane. The active buffer remains visible while the
+        // inactive buffer captures the newly selected window. Swap only after
+        // that buffer has content, so changing selection never exposes the
+        // captureSource handoff.
         BorderSurface {
           visible: root.previewActive
           width: root.previewWidth
@@ -287,13 +342,25 @@ Item {
           clip: true
 
           ScreencopyView {
-            id: previewView
+            id: previewViewA
             anchors.centerIn: parent
-            captureSource: root.previewWanted ? root.selectedToplevel.wayland : null
-            live: root.previewWanted
+            visible: root.activePreview === 0
+            captureSource: root.previewSourceA
+            live: root.opened && root.previewSourceA !== null
             paintCursor: false
             constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
-            onHasContentChanged: if (hasContent) root.previewAvailable = true
+            onHasContentChanged: if (hasContent) root.previewReady(0)
+          }
+
+          ScreencopyView {
+            id: previewViewB
+            anchors.centerIn: parent
+            visible: root.activePreview === 1
+            captureSource: root.previewSourceB
+            live: root.opened && root.previewSourceB !== null
+            paintCursor: false
+            constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
+            onHasContentChanged: if (hasContent) root.previewReady(1)
           }
         }
       }
