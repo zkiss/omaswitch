@@ -61,8 +61,6 @@ Item {
   // while selection moves; that must not collapse and rebuild the card.
   readonly property bool previewActive: root.opened && root.previewAvailable
 
-  onPreviewTargetChanged: root.queuePreview(previewTarget)
-
   // Diagnostic: make the card geometry completely invariant while open.
   // This intentionally gives up the list-only compact fallback for the test.
   readonly property int cardWidth: Math.min(Style.space(1080), panel.width - Style.gapsOut * 2)
@@ -167,20 +165,11 @@ Item {
   }
 
   function focusSelected() {
-    var window = rows[selectedIndex]
-    if (!window) return root.dismiss()
-    var command = Model.focusCommand(window)
-    if (command) {
-      Quickshell.execDetached(["sh", "-c", command])
-    } else if (window.wayland && typeof window.wayland.activate === "function") {
-      window.wayland.activate()
-    }
     root.dismiss()
   }
 
   function select(delta) {
-    if (rows.length === 0) return
-    selectedIndex = (selectedIndex + delta + rows.length) % rows.length
+    selectedIndex = (selectedIndex + delta + 10) % 10
   }
 
   function open(payloadJson) {
@@ -206,9 +195,8 @@ Item {
     root.filterText = ""
     root.selectedIndex = 0
     root.refresh()
-    if (root.cycleMode && root.rows.length > 1 && Model.isCurrent(root.rows[0]))
-      root.selectedIndex = direction < 0 ? root.rows.length - 1 : 1
-    root.previewTarget = root.previewWanted ? root.selectedToplevel.wayland : null
+    root.selectedIndex = 0
+    root.previewTarget = null
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -261,131 +249,24 @@ Item {
       color: root.background
       borderSpec: root.borderSpec
 
-      Row {
+      Item {
         anchors.fill: parent
         anchors.margins: root.contentMargin
-        spacing: root.gap
 
-        Column {
-          width: root.listWidth
-          height: parent.height
-          spacing: root.listGap
+        Rectangle {
+          anchors.fill: parent
+          radius: root.cornerRadius
+          color: root.background
 
           Text {
-            text: root.filterText === "" ? "Switch window…" : "Filter: " + root.filterText
+            anchors.centerIn: parent
+            text: "Selection " + root.selectedIndex
             color: root.foreground
             font.family: root.fontFamily
-            font.pixelSize: Style.font.title
-            elide: Text.ElideRight
-            width: parent.width
-          }
-
-          ListView {
-            id: listView
-            width: parent.width
-            height: root.listHeight
-            model: root.rows
-            clip: true
-
-            Text {
-              parent: listView
-              anchors.centerIn: parent
-              visible: root.rows.length === 0
-              text: root.filterText ? "No matching windows" : "No windows"
-              color: root.foreground
-              opacity: 0.6
-              font.family: root.fontFamily
-              font.pixelSize: Style.font.body
-            }
-
-            delegate: Item {
-              required property var modelData
-              required property int index
-              width: listView.width
-              height: root.rowHeight
-
-              Rectangle {
-                anchors.fill: parent
-                radius: root.cornerRadius
-                color: index === root.selectedIndex ? root.selectedBackground : "transparent"
-              }
-
-              Column {
-                anchors.verticalCenter: parent.verticalCenter
-                anchors.left: parent.left
-                anchors.leftMargin: Style.space(10)
-                width: parent.width - Style.space(20)
-                spacing: 2
-
-                Text {
-                  text: Model.label(modelData)
-                  textFormat: Text.PlainText
-                  color: index === root.selectedIndex ? root.selectedText : root.foreground
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.body
-                  elide: Text.ElideRight
-                  width: parent.width
-                }
-                Text {
-                  text: Model.detail(modelData)
-                  textFormat: Text.PlainText
-                  color: index === root.selectedIndex ? root.selectedText : root.foreground
-                  opacity: 0.6
-                  font.family: root.fontFamily
-                  font.pixelSize: Style.font.caption
-                  elide: Text.ElideRight
-                  width: parent.width
-                }
-              }
-
-              MouseArea {
-                anchors.fill: parent
-                onClicked: { root.selectedIndex = index; root.focusSelected() }
-              }
-            }
-          }
-        }
-
-        // Right-side peek pane. The active buffer remains visible while the
-        // inactive buffer captures the newly selected window. Swap only after
-        // that buffer has content, so changing selection never exposes the
-        // captureSource handoff.
-        BorderSurface {
-          visible: true
-          width: root.previewWidth
-          height: parent.height
-          radius: root.cornerRadius
-          color: Qt.rgba(0, 0, 0, 0.25)
-          borderSpec: Border.surfaceSpec("popups", "border", root.border, Math.max(1, Style.space(1)))
-          clip: true
-
-          ScreencopyView {
-            id: previewViewA
-            anchors.centerIn: parent
-            // Keep both scene-graph items mounted. The active buffer is
-            // simply drawn above the standby buffer, avoiding a visible-item
-            // teardown/rebuild at the handoff.
-            z: root.activePreview === 0 ? 1 : 0
-            captureSource: root.previewSourceA
-            live: root.opened && root.previewSourceA !== null
-            paintCursor: false
-            constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
-            onHasContentChanged: if (hasContent) root.previewReady(0)
-          }
-
-          ScreencopyView {
-            id: previewViewB
-            anchors.centerIn: parent
-            z: root.activePreview === 1 ? 1 : 0
-            captureSource: root.previewSourceB
-            live: root.opened && root.previewSourceB !== null
-            paintCursor: false
-            constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
-            onHasContentChanged: if (hasContent) root.previewReady(1)
+            font.pixelSize: Style.font.title * 2
           }
         }
       }
-    }
 
     Item {
       id: keyCatcher
