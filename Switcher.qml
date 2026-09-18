@@ -63,8 +63,8 @@ Item {
 
   // Diagnostic: make the card geometry completely invariant while open.
   // This intentionally gives up the list-only compact fallback for the test.
-  readonly property int cardWidth: Math.min(Style.space(1080), panel.width - Style.gapsOut * 2)
-  readonly property int cardHeight: Math.min(Style.space(520), panel.height - Style.gapsOut * 2)
+  readonly property int cardWidth: Math.min(Style.space(1400), panel.width - Style.gapsOut * 2)
+  readonly property int cardHeight: Math.min(Style.space(800), panel.height - Style.gapsOut * 2)
   readonly property int contentHeight: Math.max(0, root.cardHeight - root.contentMargin * 2)
   readonly property int innerWidth: Math.max(0, root.cardWidth - root.contentMargin * 2)
   readonly property int listWidth: Math.max(Style.space(300), Math.round(root.innerWidth * 0.40))
@@ -255,15 +255,35 @@ Item {
 
         Rectangle {
           anchors.fill: parent
-          radius: root.cornerRadius
-          color: root.background
+          radius: 0
+          color: "#ff00ff"
 
-          Text {
+          Column {
             anchors.centerIn: parent
-            text: "Selection " + root.selectedIndex
-            color: root.foreground
-            font.family: root.fontFamily
-            font.pixelSize: Style.font.title * 2
+            spacing: Style.space(24)
+
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: "OMASWITCH DIAGNOSTIC BUILD"
+              color: "black"
+              font.bold: true
+              font.pixelSize: Style.font.title * 3
+            }
+
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: "COMMIT MARKER: RADICAL-VERIFY-1"
+              color: "black"
+              font.bold: true
+              font.pixelSize: Style.font.title * 2
+            }
+
+            Text {
+              anchors.horizontalCenter: parent.horizontalCenter
+              text: "Selection " + root.selectedIndex
+              color: "black"
+              font.pixelSize: Style.font.title * 4
+            }
           }
         }
       }
