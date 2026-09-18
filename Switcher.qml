@@ -14,7 +14,9 @@ import "Model.js" as Model
 // selection through the native Wayland toplevel API, with hyprctl as fallback.
 //
 // The right side shows a live preview (Windows-11-style "peek") of the
-// initially highlighted window via a single ScreencopyView. Diagnostic build:
+// highlighted window via two alternating ScreencopyViews. The current frame
+// stays visible while the standby view starts the next capture, then swaps only
+// after the new frame is ready.
 // Wayland toplevel handle. One live stream, not one per window. If the
 // compositor lacks the hyprland-toplevel-export protocol (or the view gets
 // no frames), hasContent stays false and the list simply stays full-width —
@@ -46,9 +48,16 @@ Item {
   // Guard the index: assigning a shorter rows array notifies bindings before
   // rebuildRows() gets to clamp selectedIndex.
   readonly property var selectedToplevel: selectedIndex >= 0 && selectedIndex < rows.length ? rows[selectedIndex] : null
-  property var frozenPreviewSource: null
-  readonly property bool previewWanted: root.opened && root.frozenPreviewSource !== null
-  readonly property bool previewActive: root.opened && previewView.hasContent
+  property bool previewAvailable: false
+  property var previewSourceA: null
+  property var previewSourceB: null
+  property int activePreview: -1
+  property int pendingPreview: -1
+  readonly property var previewTarget: root.opened && root.selectedToplevel && root.selectedToplevel.wayland
+    ? root.selectedToplevel.wayland : null
+  readonly property bool previewActive: root.opened && root.previewAvailable
+
+  onPreviewTargetChanged: root.queuePreview(previewTarget)
 
   readonly property int cardWidth: Math.min(root.previewActive ? Style.space(1080) : Style.space(760), panel.width - Style.gapsOut * 2)
   readonly property int desiredListHeight: Math.max(root.rowHeight, rows.length * root.rowHeight)
@@ -75,6 +84,43 @@ Item {
   property color selectedText: Color.menu.selectedText
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
+
+  function queuePreview(source) {
+    if (!root.opened || !source) return
+
+    // If the selected window is already on screen, keep it there and ignore
+    // any stale in-flight capture in the standby buffer.
+    if (root.activePreview === 0 && root.previewSourceA === source) {
+      root.pendingPreview = -1
+      return
+    }
+    if (root.activePreview === 1 && root.previewSourceB === source) {
+      root.pendingPreview = -1
+      return
+    }
+
+    var next = root.activePreview === 0 ? 1 : 0
+    if (root.activePreview < 0) next = 0
+
+    root.pendingPreview = next
+    if (next === 0)
+      root.previewSourceA = source
+    else
+      root.previewSourceB = source
+  }
+
+  function previewReady(index) {
+    if (root.pendingPreview !== index) return
+
+    var source = index === 0 ? root.previewSourceA : root.previewSourceB
+    if (!source || source !== root.previewTarget) return
+
+    // Swap only after the new source has a frame. Keep the previous buffer
+    // alive behind it; it becomes the standby buffer for the next selection.
+    root.activePreview = index
+    root.pendingPreview = -1
+    root.previewAvailable = true
+  }
 
   function rebuildRows() {
     rows = Model.filteredWindows(allWindows, filterText)
@@ -122,6 +168,11 @@ Item {
       return
     }
 
+    root.previewAvailable = false
+    root.previewSourceA = null
+    root.previewSourceB = null
+    root.activePreview = -1
+    root.pendingPreview = -1
     root.opened = true
     root.cycleMode = payload.mode === "cycle"
     root.filterText = ""
@@ -129,8 +180,6 @@ Item {
     root.refresh()
     if (root.cycleMode && root.rows.length > 1 && Model.isCurrent(root.rows[0]))
       root.selectedIndex = direction < 0 ? root.rows.length - 1 : 1
-    root.frozenPreviewSource = root.selectedToplevel && root.selectedToplevel.wayland
-      ? root.selectedToplevel.wayland : null
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -288,12 +337,27 @@ Item {
           clip: true
 
           ScreencopyView {
-            id: previewView
+            id: previewViewA
             anchors.centerIn: parent
-            captureSource: root.frozenPreviewSource
-            live: root.previewWanted
+            z: root.activePreview === 0 ? 1 : 0
+            opacity: root.activePreview === 0 ? 1 : 0
+            captureSource: root.previewSourceA
+            live: root.opened && root.previewSourceA !== null
             paintCursor: false
             constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
+            onHasContentChanged: if (hasContent) root.previewReady(0)
+          }
+
+          ScreencopyView {
+            id: previewViewB
+            anchors.centerIn: parent
+            z: root.activePreview === 1 ? 1 : 0
+            opacity: root.activePreview === 1 ? 1 : 0
+            captureSource: root.previewSourceB
+            live: root.opened && root.previewSourceB !== null
+            paintCursor: false
+            constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
+            onHasContentChanged: if (hasContent) root.previewReady(1)
           }
         }
       }
