@@ -89,6 +89,30 @@ Item {
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
 
+  function logGeometry(reason) {
+    console.log("omaswitch-geometry",
+      reason,
+      "selectedIndex=" + root.selectedIndex,
+      "rows=" + root.rows.length,
+      "opened=" + root.opened,
+      "previewAvailable=" + root.previewAvailable,
+      "previewActive=" + root.previewActive,
+      "cardWidth=" + root.cardWidth,
+      "cardHeight=" + root.cardHeight,
+      "desiredCardHeight=" + root.desiredCardHeight,
+      "listWidth=" + root.listWidth,
+      "previewWidth=" + root.previewWidth,
+      "panelWidth=" + panel.width,
+      "panelHeight=" + panel.height)
+  }
+
+  onSelectedIndexChanged: root.logGeometry("selectedIndex")
+  onPreviewAvailableChanged: root.logGeometry("previewAvailable")
+  onPreviewActiveChanged: root.logGeometry("previewActive")
+  onCardWidthChanged: root.logGeometry("cardWidth")
+  onCardHeightChanged: root.logGeometry("cardHeight")
+  onRowsChanged: root.logGeometry("rows")
+
   function queuePreview(source) {
     if (!root.opened || !source) return
 
