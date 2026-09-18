@@ -388,10 +388,12 @@ Item {
           root.focusSelected()
           event.accepted = true
         } else if (event.key === Qt.Key_Backtab || event.key === Qt.Key_Up || event.key === Qt.Key_Left) {
-          root.select(-1)
+          if (!event.isAutoRepeat)
+            root.select(-1)
           event.accepted = true
         } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Down || event.key === Qt.Key_Right) {
-          root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+          if (!event.isAutoRepeat)
+            root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
           event.accepted = true
         } else if (Util.editsFilter(event, root.filterText)) {
           root.setFilter(Util.editedFilter(event, root.filterText))
