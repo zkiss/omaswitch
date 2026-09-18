@@ -287,6 +287,7 @@ Item {
           }
         }
       }
+    }
 
     Item {
       id: keyCatcher
