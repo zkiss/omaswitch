@@ -94,12 +94,10 @@ Item {
     // cancel any in-flight capture in the other buffer.
     if (root.activePreview === 0 && root.previewSourceA === source) {
       root.pendingPreview = -1
-      root.previewSourceB = null
       return
     }
     if (root.activePreview === 1 && root.previewSourceB === source) {
       root.pendingPreview = -1
-      root.previewSourceA = null
       return
     }
 
@@ -119,14 +117,13 @@ Item {
     var source = index === 0 ? root.previewSourceA : root.previewSourceB
     if (!source || source !== root.previewTarget) return
 
-    var previous = root.activePreview
+    // True ping-pong buffering: never clear the previous buffer here.
+    // Keep it intact behind the new one; the next selection will retarget
+    // whichever buffer is inactive. This avoids tearing a capture node down
+    // in the same scene-graph update that promotes the new one.
     root.activePreview = index
     root.pendingPreview = -1
     root.previewAvailable = true
-
-    // Stop capturing the old window only after the new frame is on screen.
-    if (previous === 0 && index !== 0) root.previewSourceA = null
-    if (previous === 1 && index !== 1) root.previewSourceB = null
   }
 
   function rebuildRows() {
