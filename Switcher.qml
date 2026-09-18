@@ -54,7 +54,10 @@ Item {
   property int pendingPreview: -1
   readonly property bool previewWanted: root.opened && root.selectedToplevel !== null && !!root.selectedToplevel.wayland
   readonly property var previewTarget: root.previewWanted ? root.selectedToplevel.wayland : null
-  readonly property bool previewActive: root.previewWanted && root.previewAvailable
+  // Once a preview has appeared, keep the pane mounted for the rest of this
+  // opening. selectedToplevel.wayland can change or briefly be unavailable
+  // while selection moves; that must not collapse and rebuild the card.
+  readonly property bool previewActive: root.opened && root.previewAvailable
 
   onPreviewTargetChanged: root.queuePreview(previewTarget)
 
