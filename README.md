@@ -36,7 +36,7 @@ omarchy plugin add https://github.com/piyush97/omaswitch.git --enable
 
 It installs in your user configuration and needs no extra package, service, or configuration file.
 
-> Live previews require Hyprland's `hyprland-toplevel-export-v1` protocol. If it is unavailable, switching and search still work; the plugin simply uses its list-only layout.
+> Live previews require Hyprland's `hyprland-toplevel-export-v1` protocol. If a preview frame is unavailable, switching and search still work; the preview area remains reserved so the switcher geometry stays stable.
 
 ## Make it your Alt+Tab switcher
 
