@@ -11,7 +11,7 @@ OmaSwitch puts your recently used windows in one fast, keyboard-first overlay. C
 - **Recent windows first.** Uses Hyprland focus history, so the window you want is usually next.
 - **Preview before switching.** A live preview follows the selected row instead of showing stale screenshots.
 - **Made for the keyboard.** Repeat `Alt+Tab`, search by typing, use arrows or Tab, then press Enter.
-- **Stays light.** Only the highlighted window gets a capture stream—never every row.
+- **Stays light.** Uses a second capture stream only during preview handoff—never one stream per row.
 - **Fits Omarchy.** Follows your active Omarchy theme and needs no daemon, packages, or privileges.
 
 ## See it in action
@@ -36,7 +36,7 @@ omarchy plugin add https://github.com/piyush97/omaswitch.git --enable
 
 It installs in your user configuration and needs no extra package, service, or configuration file.
 
-> Live previews require Hyprland's `hyprland-toplevel-export-v1` protocol. If it is unavailable, switching and search still work; the plugin simply uses its list-only layout.
+> Live previews require Hyprland's `hyprland-toplevel-export-v1` protocol. If a preview frame is unavailable, switching and search still work; the preview area remains reserved so the switcher geometry stays stable.
 
 ## Make it your Alt+Tab switcher
 

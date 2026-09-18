@@ -14,11 +14,13 @@ import "Model.js" as Model
 // selection through the native Wayland toplevel API, with hyprctl as fallback.
 //
 // The right side shows a live preview (Windows-11-style "peek") of the
-// highlighted window via a single ScreencopyView bound to that window's
+// highlighted window via two alternating ScreencopyViews. The current frame
+// stays visible while the standby view starts the next capture, then swaps only
+// after the new frame is ready.
 // Wayland toplevel handle. One live stream, not one per window. If the
 // compositor lacks the hyprland-toplevel-export protocol (or the view gets
-// no frames), hasContent stays false and the list simply stays full-width —
-// the same layout as the plain list version.
+// no frames), the preview pane stays reserved for stable geometry but remains
+// empty until a frame becomes available.
 
 Item {
   id: root
@@ -29,6 +31,12 @@ Item {
   // The plugin host hides us by calling close() after removing us from
   // openPanelIds; we must not fight it, so `opened` is only our UI state.
   property bool opened: false
+  property bool geometryAnimationsReady: false
+  property bool geometrySyncQueued: false
+  property real displayedCardWidth: 0
+  property real displayedCardHeight: 0
+  property real cardXScale: 1
+  property real cardYScale: 1
   property bool cycleMode: false
   property string filterText: ""
   property int selectedIndex: 0
@@ -46,8 +54,25 @@ Item {
   // Guard the index: assigning a shorter rows array notifies bindings before
   // rebuildRows() gets to clamp selectedIndex.
   readonly property var selectedToplevel: selectedIndex >= 0 && selectedIndex < rows.length ? rows[selectedIndex] : null
-  readonly property bool previewWanted: root.opened && root.selectedToplevel !== null && !!root.selectedToplevel.wayland
-  readonly property bool previewActive: root.previewWanted && previewView.hasContent
+  property bool previewAvailable: false
+  property var previewSourceA: null
+  property var previewSourceB: null
+  property int activePreview: -1
+  property int pendingPreview: -1
+  readonly property var previewTarget: root.opened && root.selectedToplevel && root.selectedToplevel.wayland
+    ? root.selectedToplevel.wayland : null
+  // Reserve the preview pane as soon as a capturable window is selected.
+  // This keeps card geometry stable while the first screencopy frame arrives.
+  readonly property bool previewActive: root.opened && root.previewTarget !== null
+
+  onPreviewTargetChanged: {
+    if (!previewTarget) {
+      root.previewAvailable = false
+      root.pendingPreview = -1
+      return
+    }
+    root.queuePreview(previewTarget)
+  }
 
   readonly property int cardWidth: Math.min(root.previewActive ? Style.space(1080) : Style.space(760), panel.width - Style.gapsOut * 2)
   readonly property int desiredListHeight: Math.max(root.rowHeight, rows.length * root.rowHeight)
@@ -55,8 +80,8 @@ Item {
   readonly property int cardHeight: Math.min(
     Math.max(root.previewActive ? Style.space(400) : 0, root.desiredCardHeight),
     panel.height - Style.gapsOut * 2)
-  readonly property int contentHeight: Math.max(0, root.cardHeight - root.contentMargin * 2)
-  readonly property int innerWidth: Math.max(0, root.cardWidth - root.contentMargin * 2)
+  readonly property int contentHeight: Math.max(0, root.displayedCardHeight - root.contentMargin * 2)
+  readonly property int innerWidth: Math.max(0, root.displayedCardWidth - root.contentMargin * 2)
   readonly property int listWidth: root.previewActive ? Math.max(Style.space(300), Math.round(root.innerWidth * 0.40)) : root.innerWidth
   readonly property int previewWidth: root.previewActive ? Math.max(0, root.innerWidth - root.listWidth - root.gap) : 0
   readonly property int listHeight: Math.max(0, root.contentHeight - root.headerHeight - root.listGap)
@@ -74,6 +99,128 @@ Item {
   property color selectedText: Color.menu.selectedText
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
+
+  function scheduleCardGeometrySync() {
+    if (root.geometrySyncQueued) return
+    root.geometrySyncQueued = true
+    Qt.callLater(function() {
+      root.geometrySyncQueued = false
+      root.syncCardGeometry()
+    })
+  }
+
+  function syncCardGeometry() {
+    var nextWidth = root.cardWidth
+    var nextHeight = root.cardHeight
+    if (nextWidth <= 0 || nextHeight <= 0) return
+
+    var oldVisualWidth = root.displayedCardWidth > 0
+      ? root.displayedCardWidth * root.cardXScale : nextWidth
+    var oldVisualHeight = root.displayedCardHeight > 0
+      ? root.displayedCardHeight * root.cardYScale : nextHeight
+
+    cardXAnimation.stop()
+    cardYAnimation.stop()
+
+    root.displayedCardWidth = nextWidth
+    root.displayedCardHeight = nextHeight
+
+    if (!root.geometryAnimationsReady) {
+      root.cardXScale = 1
+      root.cardYScale = 1
+      return
+    }
+
+    // FLIP: snap layout once, then animate only the scene-graph transform.
+    // This avoids re-laying out ListView/ScreencopyView/borders every frame.
+    root.cardXScale = oldVisualWidth / nextWidth
+    root.cardYScale = oldVisualHeight / nextHeight
+    cardXAnimation.restart()
+    cardYAnimation.restart()
+  }
+
+  onCardWidthChanged: root.scheduleCardGeometrySync()
+  onCardHeightChanged: root.scheduleCardGeometrySync()
+
+  NumberAnimation {
+    id: cardXAnimation
+    target: root
+    property: "cardXScale"
+    to: 1
+    duration: 110
+    easing.type: Easing.OutCubic
+  }
+
+  NumberAnimation {
+    id: cardYAnimation
+    target: root
+    property: "cardYScale"
+    to: 1
+    duration: 110
+    easing.type: Easing.OutCubic
+  }
+
+  function queuePreview(source) {
+    if (!root.opened || !source) return
+
+    // Already showing the requested source.
+    if (root.activePreview === 0 && root.previewSourceA === source) return
+    if (root.activePreview === 1 && root.previewSourceB === source) return
+
+    // Never retarget a ScreencopyView while it is waiting for a frame.
+    // previewTarget still tracks newer selections; previewReady() will discard
+    // this frame if it became stale and then queue only the newest target.
+    if (root.pendingPreview >= 0) return
+
+    var next = root.activePreview === 0 ? 1 : 0
+    if (root.activePreview < 0) next = 0
+
+    // Ping-pong buffers retain their previous frames. If the requested window
+    // is already sitting in the standby buffer, assigning the same
+    // captureSource again is a no-op and no hasContentChanged signal will fire.
+    // Promote that already-ready frame immediately instead.
+    if (next === 0 && root.previewSourceA === source && previewViewA.hasContent) {
+      root.activePreview = 0
+      root.previewAvailable = true
+      return
+    }
+    if (next === 1 && root.previewSourceB === source && previewViewB.hasContent) {
+      root.activePreview = 1
+      root.previewAvailable = true
+      return
+    }
+
+    root.pendingPreview = next
+    if (next === 0)
+      root.previewSourceA = source
+    else
+      root.previewSourceB = source
+  }
+
+  function previewReady(index) {
+    if (root.pendingPreview !== index) return
+
+    var source = index === 0 ? root.previewSourceA : root.previewSourceB
+    if (!source) return
+
+    if (source !== root.previewTarget) {
+      // The capture completed for an older selection. Do not show it and do
+      // not retarget from inside this hasContent callback. Clear the in-flight
+      // state first, then queue the latest selection on the next event turn.
+      root.pendingPreview = -1
+      Qt.callLater(function() {
+        if (root.opened)
+          root.queuePreview(root.previewTarget)
+      })
+      return
+    }
+
+    // Swap only after the currently selected source has a frame. Keep the
+    // previous buffer alive behind it as standby for the next selection.
+    root.activePreview = index
+    root.pendingPreview = -1
+    root.previewAvailable = true
+  }
 
   function rebuildRows() {
     rows = Model.filteredWindows(allWindows, filterText)
@@ -121,23 +268,39 @@ Item {
       return
     }
 
-    root.opened = true
+    root.previewAvailable = false
+    root.previewSourceA = null
+    root.previewSourceB = null
+    root.activePreview = -1
+    root.pendingPreview = -1
     root.cycleMode = payload.mode === "cycle"
     root.filterText = ""
     root.selectedIndex = 0
+
+    // Build the initial model and choose the initial row before making the
+    // PanelWindow visible. previewActive can therefore start at its final
+    // geometry instead of growing after the first screencopy frame arrives.
     root.refresh()
     if (root.cycleMode && root.rows.length > 1 && Model.isCurrent(root.rows[0]))
       root.selectedIndex = direction < 0 ? root.rows.length - 1 : 1
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+
+    root.geometryAnimationsReady = false
+    root.opened = true
+    Qt.callLater(function() {
+      root.geometryAnimationsReady = true
+      keyCatcher.forceActiveFocus()
+    })
   }
 
   function close() {
+    root.geometryAnimationsReady = false
     root.opened = false
     root.cycleMode = false
   }
 
   // User-initiated dismissal also drops the host's openPanelIds entry.
   function dismiss() {
+    root.geometryAnimationsReady = false
     root.opened = false
     root.cycleMode = false
     if (root.shell && typeof root.shell.hide === "function")
@@ -156,6 +319,8 @@ Item {
       }
     }
   }
+
+  Component.onCompleted: root.syncCardGeometry()
 
   PanelWindow {
     id: panel
@@ -179,10 +344,17 @@ Item {
 
     BorderSurface {
       id: card
-      width: root.cardWidth
-      height: root.cardHeight
+      width: root.displayedCardWidth
+      height: root.displayedCardHeight
       radius: root.cornerRadius
       anchors.centerIn: parent
+
+      transform: Scale {
+        origin.x: card.width / 2
+        origin.y: card.height / 2
+        xScale: root.cardXScale
+        yScale: root.cardYScale
+      }
       color: root.background
       borderSpec: root.borderSpec
 
@@ -276,21 +448,60 @@ Item {
         // frame; width collapses to 0 and the list takes the whole card when
         // the compositor cannot export windows.
         BorderSurface {
+          id: previewPane
           visible: root.previewActive
           width: root.previewWidth
           height: parent.height
           radius: root.cornerRadius
           color: Qt.rgba(0, 0, 0, 0.25)
-          borderSpec: Border.surfaceSpec("popups", "border", root.border, Math.max(1, Style.space(1)))
-          clip: true
+          property var previewBorderSpec: Border.surfaceSpec("popups", "border", root.border, Math.max(1, Style.space(1)))
+          borderSpec: Border.none()
+          clip: false
 
-          ScreencopyView {
-            id: previewView
-            anchors.centerIn: parent
-            captureSource: root.previewWanted ? root.selectedToplevel.wayland : null
-            live: root.previewWanted
-            paintCursor: false
-            constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
+          // Keep the capture inside the intended border bounds. The actual
+          // border is drawn explicitly as the last/highest-z child below, so
+          // screencopy rendering can never cover its top edge.
+          Item {
+            anchors.fill: parent
+            anchors.topMargin: Border.top(previewPane.previewBorderSpec)
+            anchors.rightMargin: Border.right(previewPane.previewBorderSpec)
+            anchors.bottomMargin: Border.bottom(previewPane.previewBorderSpec)
+            anchors.leftMargin: Border.left(previewPane.previewBorderSpec)
+            clip: true
+
+            ScreencopyView {
+              id: previewViewA
+              anchors.centerIn: parent
+              z: root.activePreview === 0 ? 1 : 0
+              opacity: root.activePreview === 0 ? 1 : 0
+              captureSource: root.previewSourceA
+              live: root.opened && root.previewSourceA !== null
+              paintCursor: false
+              constraintSize: Qt.size(
+                Math.min(root.previewConstraintWidth, parent.width),
+                Math.min(root.previewConstraintHeight, parent.height))
+              onHasContentChanged: if (hasContent) root.previewReady(0)
+            }
+
+            ScreencopyView {
+              id: previewViewB
+              anchors.centerIn: parent
+              z: root.activePreview === 1 ? 1 : 0
+              opacity: root.activePreview === 1 ? 1 : 0
+              captureSource: root.previewSourceB
+              live: root.opened && root.previewSourceB !== null
+              paintCursor: false
+              constraintSize: Qt.size(
+                Math.min(root.previewConstraintWidth, parent.width),
+                Math.min(root.previewConstraintHeight, parent.height))
+              onHasContentChanged: if (hasContent) root.previewReady(1)
+            }
+          }
+
+          BorderOverlay {
+            anchors.fill: parent
+            radius: previewPane.radius
+            borderSpec: previewPane.previewBorderSpec
           }
         }
       }
@@ -304,17 +515,29 @@ Item {
 
       Keys.priority: Keys.BeforeItem
       Keys.onPressed: function(event) {
-        if (event.key === Qt.Key_Escape) {
+        var altCycleTab = root.cycleMode
+          && (event.modifiers & Qt.AltModifier)
+          && (event.key === Qt.Key_Tab || event.key === Qt.Key_Backtab)
+
+        // Alt+Tab is already handled by the Hyprland binding, which summons
+        // this plugin with a direction payload. Once the overlay owns keyboard
+        // focus, the same keypress may also arrive here. Consuming it prevents
+        // one physical Alt+Tab from advancing twice.
+        if (altCycleTab) {
+          event.accepted = true
+        } else if (event.key === Qt.Key_Escape) {
           root.dismiss()
           event.accepted = true
         } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
           root.focusSelected()
           event.accepted = true
         } else if (event.key === Qt.Key_Backtab || event.key === Qt.Key_Up || event.key === Qt.Key_Left) {
-          root.select(-1)
+          if (!event.isAutoRepeat)
+            root.select(-1)
           event.accepted = true
         } else if (event.key === Qt.Key_Tab || event.key === Qt.Key_Down || event.key === Qt.Key_Right) {
-          root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
+          if (!event.isAutoRepeat)
+            root.select((event.modifiers & Qt.ShiftModifier) ? -1 : 1)
           event.accepted = true
         } else if (Util.editsFilter(event, root.filterText)) {
           root.setFilter(Util.editedFilter(event, root.filterText))
