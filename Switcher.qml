@@ -6,7 +6,7 @@ import qs.Commons
 import qs.Ui
 import "Model.js" as Model
 
-// Diagnostic build: original window list with previews completely disabled.
+// Keyboard-first window switcher overlay with a live window peek.
 //
 // Opened with `omarchy-shell shell toggle piyush.omaswitch` (bind it to
 // a key in ~/.config/hypr/bindings.lua). Lists Hyprland toplevels from the
@@ -14,7 +14,7 @@ import "Model.js" as Model
 // selection through the native Wayland toplevel API, with hyprctl as fallback.
 //
 // The right side shows a live preview (Windows-11-style "peek") of the
-// highlighted window via a single ScreencopyView bound to that window's
+// initially highlighted window via a single ScreencopyView. Diagnostic build:
 // Wayland toplevel handle. One live stream, not one per window. If the
 // compositor lacks the hyprland-toplevel-export protocol (or the view gets
 // no frames), hasContent stays false and the list simply stays full-width —
@@ -46,17 +46,26 @@ Item {
   // Guard the index: assigning a shorter rows array notifies bindings before
   // rebuildRows() gets to clamp selectedIndex.
   readonly property var selectedToplevel: selectedIndex >= 0 && selectedIndex < rows.length ? rows[selectedIndex] : null
+  property var frozenPreviewSource: null
+  readonly property bool previewWanted: root.opened && root.frozenPreviewSource !== null
+  readonly property bool previewActive: root.opened && previewView.hasContent
 
-  readonly property int cardWidth: Math.min(Style.space(760), panel.width - Style.gapsOut * 2)
+  readonly property int cardWidth: Math.min(root.previewActive ? Style.space(1080) : Style.space(760), panel.width - Style.gapsOut * 2)
   readonly property int desiredListHeight: Math.max(root.rowHeight, rows.length * root.rowHeight)
   readonly property int desiredCardHeight: root.contentMargin * 2 + root.headerHeight + root.listGap + root.desiredListHeight
   readonly property int cardHeight: Math.min(
-    root.desiredCardHeight,
+    Math.max(root.previewActive ? Style.space(400) : 0, root.desiredCardHeight),
     panel.height - Style.gapsOut * 2)
   readonly property int contentHeight: Math.max(0, root.cardHeight - root.contentMargin * 2)
   readonly property int innerWidth: Math.max(0, root.cardWidth - root.contentMargin * 2)
-  readonly property int listWidth: root.innerWidth
+  readonly property int listWidth: root.previewActive ? Math.max(Style.space(300), Math.round(root.innerWidth * 0.40)) : root.innerWidth
+  readonly property int previewWidth: root.previewActive ? Math.max(0, root.innerWidth - root.listWidth - root.gap) : 0
   readonly property int listHeight: Math.max(0, root.contentHeight - root.headerHeight - root.listGap)
+  // Positive before the pane appears, so ScreencopyView can obtain its first
+  // frame and flip hasContent without depending on a zero-sized parent.
+  readonly property int previewConstraintWidth: Math.max(1, Math.min(Style.space(580), panel.width - Style.space(420)))
+  readonly property int previewConstraintHeight: Math.max(1, Math.min(Style.space(360), panel.height - Style.gapsOut * 2 - root.contentMargin * 2))
+
   property color background: Color.menu.background
   property color foreground: Color.menu.text
   property color border: Color.menu.border
@@ -120,6 +129,8 @@ Item {
     root.refresh()
     if (root.cycleMode && root.rows.length > 1 && Model.isCurrent(root.rows[0]))
       root.selectedIndex = direction < 0 ? root.rows.length - 1 : 1
+    root.frozenPreviewSource = root.selectedToplevel && root.selectedToplevel.wayland
+      ? root.selectedToplevel.wayland : null
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
@@ -189,7 +200,7 @@ Item {
           spacing: root.listGap
 
           Text {
-            text: root.filterText === "" ? "LIST-ONLY TEST — Switch window…" : "LIST-ONLY TEST — Filter: " + root.filterText
+            text: root.filterText === "" ? "Switch window…" : "Filter: " + root.filterText
             color: root.foreground
             font.family: root.fontFamily
             font.pixelSize: Style.font.title
@@ -264,7 +275,27 @@ Item {
           }
         }
 
+        // Right-side peek pane. Only visible once the view actually has a
+        // frame; width collapses to 0 and the list takes the whole card when
+        // the compositor cannot export windows.
+        BorderSurface {
+          visible: root.previewActive
+          width: root.previewWidth
+          height: parent.height
+          radius: root.cornerRadius
+          color: Qt.rgba(0, 0, 0, 0.25)
+          borderSpec: Border.surfaceSpec("popups", "border", root.border, Math.max(1, Style.space(1)))
+          clip: true
 
+          ScreencopyView {
+            id: previewView
+            anchors.centerIn: parent
+            captureSource: root.frozenPreviewSource
+            live: root.previewWanted
+            paintCursor: false
+            constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
+          }
+        }
       }
     }
 
