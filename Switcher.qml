@@ -252,6 +252,8 @@ Item {
   PanelWindow {
     id: panel
     visible: root.opened
+    onWidthChanged: root.logGeometry("panelWidth")
+    onHeightChanged: root.logGeometry("panelHeight")
     anchors { top: true; bottom: true; left: true; right: true }
     color: "transparent"
     WlrLayershell.namespace: "piyush-omaswitch"
