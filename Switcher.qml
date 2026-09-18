@@ -359,18 +359,19 @@ Item {
           height: parent.height
           radius: root.cornerRadius
           color: Qt.rgba(0, 0, 0, 0.25)
-          borderSpec: Border.surfaceSpec("popups", "border", root.border, Math.max(1, Style.space(1)))
+          property var previewBorderSpec: Border.surfaceSpec("popups", "border", root.border, Math.max(1, Style.space(1)))
+          borderSpec: Border.none()
           clip: true
 
-          // Keep captured content inside BorderSurface's border. Without these
-          // insets the ScreencopyViews are painted above the border overlay and
-          // can cover its top edge.
+          // Keep the capture inside the intended border bounds. The actual
+          // border is drawn explicitly as the last/highest-z child below, so
+          // screencopy rendering can never cover its top edge.
           Item {
             anchors.fill: parent
-            anchors.topMargin: previewPane.contentTopInset
-            anchors.rightMargin: previewPane.contentRightInset
-            anchors.bottomMargin: previewPane.contentBottomInset
-            anchors.leftMargin: previewPane.contentLeftInset
+            anchors.topMargin: Border.top(previewPane.previewBorderSpec)
+            anchors.rightMargin: Border.right(previewPane.previewBorderSpec)
+            anchors.bottomMargin: Border.bottom(previewPane.previewBorderSpec)
+            anchors.leftMargin: Border.left(previewPane.previewBorderSpec)
             clip: true
 
             ScreencopyView {
@@ -400,6 +401,12 @@ Item {
                 Math.min(root.previewConstraintHeight, parent.height))
               onHasContentChanged: if (hasContent) root.previewReady(1)
             }
+          }
+
+          BorderOverlay {
+            anchors.fill: parent
+            radius: previewPane.radius
+            borderSpec: previewPane.previewBorderSpec
           }
         }
       }
