@@ -63,16 +63,14 @@ Item {
 
   onPreviewTargetChanged: root.queuePreview(previewTarget)
 
-  readonly property int cardWidth: Math.min(root.previewActive ? Style.space(1080) : Style.space(760), panel.width - Style.gapsOut * 2)
-  readonly property int desiredListHeight: Math.max(root.rowHeight, rows.length * root.rowHeight)
-  readonly property int desiredCardHeight: root.contentMargin * 2 + root.headerHeight + root.listGap + root.desiredListHeight
-  readonly property int cardHeight: Math.min(
-    Math.max(root.previewActive ? Style.space(400) : 0, root.desiredCardHeight),
-    panel.height - Style.gapsOut * 2)
+  // Diagnostic: make the card geometry completely invariant while open.
+  // This intentionally gives up the list-only compact fallback for the test.
+  readonly property int cardWidth: Math.min(Style.space(1080), panel.width - Style.gapsOut * 2)
+  readonly property int cardHeight: Math.min(Style.space(520), panel.height - Style.gapsOut * 2)
   readonly property int contentHeight: Math.max(0, root.cardHeight - root.contentMargin * 2)
   readonly property int innerWidth: Math.max(0, root.cardWidth - root.contentMargin * 2)
-  readonly property int listWidth: root.previewActive ? Math.max(Style.space(300), Math.round(root.innerWidth * 0.40)) : root.innerWidth
-  readonly property int previewWidth: root.previewActive ? Math.max(0, root.innerWidth - root.listWidth - root.gap) : 0
+  readonly property int listWidth: Math.max(Style.space(300), Math.round(root.innerWidth * 0.40))
+  readonly property int previewWidth: Math.max(0, root.innerWidth - root.listWidth - root.gap)
   readonly property int listHeight: Math.max(0, root.contentHeight - root.headerHeight - root.listGap)
   // Positive before the pane appears, so ScreencopyView can obtain its first
   // frame and flip hasContent without depending on a zero-sized parent.
@@ -99,7 +97,6 @@ Item {
       "previewActive=" + root.previewActive,
       "cardWidth=" + root.cardWidth,
       "cardHeight=" + root.cardHeight,
-      "desiredCardHeight=" + root.desiredCardHeight,
       "listWidth=" + root.listWidth,
       "previewWidth=" + root.previewWidth,
       "panelWidth=" + panel.width,
@@ -354,7 +351,7 @@ Item {
         // that buffer has content, so changing selection never exposes the
         // captureSource handoff.
         BorderSurface {
-          visible: root.previewActive
+          visible: true
           width: root.previewWidth
           height: parent.height
           radius: root.cornerRadius
