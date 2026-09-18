@@ -161,6 +161,14 @@ Item {
   function select(delta) {
     if (rows.length === 0) return
     selectedIndex = (selectedIndex + delta + rows.length) % rows.length
+
+    // Selection is our own state; do not bind it to ListView.currentIndex.
+    // currentIndex drives Qt's current-item/highlight machinery and may
+    // reposition the view on every keypress. Only scroll when necessary.
+    Qt.callLater(function() {
+      if (root.opened && listView.count > 0)
+        listView.positionViewAtIndex(root.selectedIndex, ListView.Contain)
+    })
   }
 
   function open(payloadJson) {
@@ -269,7 +277,6 @@ Item {
             width: parent.width
             height: root.listHeight
             model: root.rows
-            currentIndex: root.selectedIndex
             clip: true
 
             Text {
@@ -347,7 +354,10 @@ Item {
           ScreencopyView {
             id: previewViewA
             anchors.centerIn: parent
-            visible: root.activePreview === 0
+            // Keep both scene-graph items mounted. The active buffer is
+            // simply drawn above the standby buffer, avoiding a visible-item
+            // teardown/rebuild at the handoff.
+            z: root.activePreview === 0 ? 1 : 0
             captureSource: root.previewSourceA
             live: root.opened && root.previewSourceA !== null
             paintCursor: false
@@ -358,7 +368,7 @@ Item {
           ScreencopyView {
             id: previewViewB
             anchors.centerIn: parent
-            visible: root.activePreview === 1
+            z: root.activePreview === 1 ? 1 : 0
             captureSource: root.previewSourceB
             live: root.opened && root.previewSourceB !== null
             paintCursor: false
