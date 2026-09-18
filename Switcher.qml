@@ -19,8 +19,8 @@ import "Model.js" as Model
 // after the new frame is ready.
 // Wayland toplevel handle. One live stream, not one per window. If the
 // compositor lacks the hyprland-toplevel-export protocol (or the view gets
-// no frames), hasContent stays false and the list simply stays full-width —
-// the same layout as the plain list version.
+// no frames), the preview pane stays reserved for stable geometry but remains
+// empty until a frame becomes available.
 
 Item {
   id: root
@@ -55,9 +55,18 @@ Item {
   property int pendingPreview: -1
   readonly property var previewTarget: root.opened && root.selectedToplevel && root.selectedToplevel.wayland
     ? root.selectedToplevel.wayland : null
-  readonly property bool previewActive: root.opened && root.previewAvailable
+  // Reserve the preview pane as soon as a capturable window is selected.
+  // This keeps card geometry stable while the first screencopy frame arrives.
+  readonly property bool previewActive: root.opened && root.previewTarget !== null
 
-  onPreviewTargetChanged: root.queuePreview(previewTarget)
+  onPreviewTargetChanged: {
+    if (!previewTarget) {
+      root.previewAvailable = false
+      root.pendingPreview = -1
+      return
+    }
+    root.queuePreview(previewTarget)
+  }
 
   readonly property int cardWidth: Math.min(root.previewActive ? Style.space(1080) : Style.space(760), panel.width - Style.gapsOut * 2)
   readonly property int desiredListHeight: Math.max(root.rowHeight, rows.length * root.rowHeight)
@@ -198,13 +207,18 @@ Item {
     root.previewSourceB = null
     root.activePreview = -1
     root.pendingPreview = -1
-    root.opened = true
     root.cycleMode = payload.mode === "cycle"
     root.filterText = ""
     root.selectedIndex = 0
+
+    // Build the initial model and choose the initial row before making the
+    // PanelWindow visible. previewActive can therefore start at its final
+    // geometry instead of growing after the first screencopy frame arrives.
     root.refresh()
     if (root.cycleMode && root.rows.length > 1 && Model.isCurrent(root.rows[0]))
       root.selectedIndex = direction < 0 ? root.rows.length - 1 : 1
+
+    root.opened = true
     Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
