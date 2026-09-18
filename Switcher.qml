@@ -88,16 +88,14 @@ Item {
   function queuePreview(source) {
     if (!root.opened || !source) return
 
-    // If the selected window is already on screen, keep it there and ignore
-    // any stale in-flight capture in the standby buffer.
-    if (root.activePreview === 0 && root.previewSourceA === source) {
-      root.pendingPreview = -1
-      return
-    }
-    if (root.activePreview === 1 && root.previewSourceB === source) {
-      root.pendingPreview = -1
-      return
-    }
+    // Already showing the requested source.
+    if (root.activePreview === 0 && root.previewSourceA === source) return
+    if (root.activePreview === 1 && root.previewSourceB === source) return
+
+    // Never retarget a ScreencopyView while it is waiting for a frame.
+    // previewTarget still tracks newer selections; previewReady() will discard
+    // this frame if it became stale and then queue only the newest target.
+    if (root.pendingPreview >= 0) return
 
     var next = root.activePreview === 0 ? 1 : 0
     if (root.activePreview < 0) next = 0
@@ -113,10 +111,22 @@ Item {
     if (root.pendingPreview !== index) return
 
     var source = index === 0 ? root.previewSourceA : root.previewSourceB
-    if (!source || source !== root.previewTarget) return
+    if (!source) return
 
-    // Swap only after the new source has a frame. Keep the previous buffer
-    // alive behind it; it becomes the standby buffer for the next selection.
+    if (source !== root.previewTarget) {
+      // The capture completed for an older selection. Do not show it and do
+      // not retarget from inside this hasContent callback. Clear the in-flight
+      // state first, then queue the latest selection on the next event turn.
+      root.pendingPreview = -1
+      Qt.callLater(function() {
+        if (root.opened)
+          root.queuePreview(root.previewTarget)
+      })
+      return
+    }
+
+    // Swap only after the currently selected source has a frame. Keep the
+    // previous buffer alive behind it as standby for the next selection.
     root.activePreview = index
     root.pendingPreview = -1
     root.previewAvailable = true
