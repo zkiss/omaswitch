@@ -100,6 +100,21 @@ Item {
     var next = root.activePreview === 0 ? 1 : 0
     if (root.activePreview < 0) next = 0
 
+    // Ping-pong buffers retain their previous frames. If the requested window
+    // is already sitting in the standby buffer, assigning the same
+    // captureSource again is a no-op and no hasContentChanged signal will fire.
+    // Promote that already-ready frame immediately instead.
+    if (next === 0 && root.previewSourceA === source && previewViewA.hasContent) {
+      root.activePreview = 0
+      root.previewAvailable = true
+      return
+    }
+    if (next === 1 && root.previewSourceB === source && previewViewB.hasContent) {
+      root.activePreview = 1
+      root.previewAvailable = true
+      return
+    }
+
     root.pendingPreview = next
     if (next === 0)
       root.previewSourceA = source
