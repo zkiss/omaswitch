@@ -17,8 +17,8 @@ import "Model.js" as Model
 // highlighted window via two alternating ScreencopyViews. The current frame
 // stays visible while the inactive view starts capturing the next selection,
 // then the views swap once the new frame is ready. If the compositor lacks the
-// hyprland-toplevel-export protocol (or the views get no frames),
-// no frames), hasContent stays false and the list simply stays full-width —
+// hyprland-toplevel-export protocol (or the views get no frames), hasContent
+// stays false and the list simply stays full-width —
 // the same layout as the plain list version.
 
 Item {
