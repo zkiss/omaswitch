@@ -46,8 +46,9 @@ Item {
   // Guard the index: assigning a shorter rows array notifies bindings before
   // rebuildRows() gets to clamp selectedIndex.
   readonly property var selectedToplevel: selectedIndex >= 0 && selectedIndex < rows.length ? rows[selectedIndex] : null
+  property bool previewAvailable: false
   readonly property bool previewWanted: root.opened && root.selectedToplevel !== null && !!root.selectedToplevel.wayland
-  readonly property bool previewActive: root.previewWanted && previewView.hasContent
+  readonly property bool previewActive: root.previewWanted && root.previewAvailable
 
   readonly property int cardWidth: Math.min(root.previewActive ? Style.space(1080) : Style.space(760), panel.width - Style.gapsOut * 2)
   readonly property int desiredListHeight: Math.max(root.rowHeight, rows.length * root.rowHeight)
@@ -121,6 +122,7 @@ Item {
       return
     }
 
+    root.previewAvailable = false
     root.opened = true
     root.cycleMode = payload.mode === "cycle"
     root.filterText = ""
@@ -272,9 +274,9 @@ Item {
           }
         }
 
-        // Right-side peek pane. Only visible once the view actually has a
-        // frame; width collapses to 0 and the list takes the whole card when
-        // the compositor cannot export windows.
+        // Right-side peek pane. Wait for the first frame once per opening,
+        // then keep the layout stable while captureSource changes. Switching
+        // sources can briefly clear hasContent while the next stream starts.
         BorderSurface {
           visible: root.previewActive
           width: root.previewWidth
@@ -291,6 +293,7 @@ Item {
             live: root.previewWanted
             paintCursor: false
             constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
+            onHasContentChanged: if (hasContent) root.previewAvailable = true
           }
         }
       }
