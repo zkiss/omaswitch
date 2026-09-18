@@ -353,6 +353,7 @@ Item {
         // frame; width collapses to 0 and the list takes the whole card when
         // the compositor cannot export windows.
         BorderSurface {
+          id: previewPane
           visible: root.previewActive
           width: root.previewWidth
           height: parent.height
@@ -361,28 +362,44 @@ Item {
           borderSpec: Border.surfaceSpec("popups", "border", root.border, Math.max(1, Style.space(1)))
           clip: true
 
-          ScreencopyView {
-            id: previewViewA
-            anchors.centerIn: parent
-            z: root.activePreview === 0 ? 1 : 0
-            opacity: root.activePreview === 0 ? 1 : 0
-            captureSource: root.previewSourceA
-            live: root.opened && root.previewSourceA !== null
-            paintCursor: false
-            constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
-            onHasContentChanged: if (hasContent) root.previewReady(0)
-          }
+          // Keep captured content inside BorderSurface's border. Without these
+          // insets the ScreencopyViews are painted above the border overlay and
+          // can cover its top edge.
+          Item {
+            anchors.fill: parent
+            anchors.topMargin: previewPane.contentTopInset
+            anchors.rightMargin: previewPane.contentRightInset
+            anchors.bottomMargin: previewPane.contentBottomInset
+            anchors.leftMargin: previewPane.contentLeftInset
+            clip: true
 
-          ScreencopyView {
-            id: previewViewB
-            anchors.centerIn: parent
-            z: root.activePreview === 1 ? 1 : 0
-            opacity: root.activePreview === 1 ? 1 : 0
-            captureSource: root.previewSourceB
-            live: root.opened && root.previewSourceB !== null
-            paintCursor: false
-            constraintSize: Qt.size(root.previewConstraintWidth, root.previewConstraintHeight)
-            onHasContentChanged: if (hasContent) root.previewReady(1)
+            ScreencopyView {
+              id: previewViewA
+              anchors.centerIn: parent
+              z: root.activePreview === 0 ? 1 : 0
+              opacity: root.activePreview === 0 ? 1 : 0
+              captureSource: root.previewSourceA
+              live: root.opened && root.previewSourceA !== null
+              paintCursor: false
+              constraintSize: Qt.size(
+                Math.min(root.previewConstraintWidth, parent.width),
+                Math.min(root.previewConstraintHeight, parent.height))
+              onHasContentChanged: if (hasContent) root.previewReady(0)
+            }
+
+            ScreencopyView {
+              id: previewViewB
+              anchors.centerIn: parent
+              z: root.activePreview === 1 ? 1 : 0
+              opacity: root.activePreview === 1 ? 1 : 0
+              captureSource: root.previewSourceB
+              live: root.opened && root.previewSourceB !== null
+              paintCursor: false
+              constraintSize: Qt.size(
+                Math.min(root.previewConstraintWidth, parent.width),
+                Math.min(root.previewConstraintHeight, parent.height))
+              onHasContentChanged: if (hasContent) root.previewReady(1)
+            }
           }
         }
       }
