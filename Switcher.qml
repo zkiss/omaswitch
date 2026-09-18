@@ -184,14 +184,6 @@ Item {
   function select(delta) {
     if (rows.length === 0) return
     selectedIndex = (selectedIndex + delta + rows.length) % rows.length
-
-    // Selection is our own state; do not bind it to ListView.currentIndex.
-    // currentIndex drives Qt's current-item/highlight machinery and may
-    // reposition the view on every keypress. Only scroll when necessary.
-    Qt.callLater(function() {
-      if (root.opened && listView.count > 0)
-        listView.positionViewAtIndex(root.selectedIndex, ListView.Contain)
-    })
   }
 
   function open(payloadJson) {
@@ -236,18 +228,10 @@ Item {
       root.shell.hide((root.manifest && root.manifest.id) || "piyush.omaswitch")
   }
 
-  // Keep the list fresh while open (windows open/close/rename).
-  Connections {
-    target: Hyprland
-    function onRawEvent(event) {
-      if (!root.opened) return
-      var name = event ? String(event.name || "") : ""
-      if (name === "activewindow" || name === "closewindow" || name === "openwindow" ||
-          name === "workspace" || name === "movewindow" || name.indexOf("windowtitle") === 0) {
-        root.refresh()
-      }
-    }
-  }
+  // Keep the window snapshot fixed while the switcher is open. Replacing the
+  // ListView model in response to compositor events can transiently change the
+  // row count and therefore the card geometry. A fresh snapshot is taken on
+  // every open instead.
 
   PanelWindow {
     id: panel
