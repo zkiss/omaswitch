@@ -361,7 +361,7 @@ Item {
           color: Qt.rgba(0, 0, 0, 0.25)
           property var previewBorderSpec: Border.surfaceSpec("popups", "border", root.border, Math.max(1, Style.space(1)))
           borderSpec: Border.none()
-          clip: true
+          clip: false
 
           // Keep the capture inside the intended border bounds. The actual
           // border is drawn explicitly as the last/highest-z child below, so
