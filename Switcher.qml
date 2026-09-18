@@ -31,6 +31,7 @@ Item {
   // The plugin host hides us by calling close() after removing us from
   // openPanelIds; we must not fight it, so `opened` is only our UI state.
   property bool opened: false
+  property bool geometryAnimationsReady: false
   property bool cycleMode: false
   property string filterText: ""
   property int selectedIndex: 0
@@ -74,8 +75,8 @@ Item {
   readonly property int cardHeight: Math.min(
     Math.max(root.previewActive ? Style.space(400) : 0, root.desiredCardHeight),
     panel.height - Style.gapsOut * 2)
-  readonly property int contentHeight: Math.max(0, root.cardHeight - root.contentMargin * 2)
-  readonly property int innerWidth: Math.max(0, root.cardWidth - root.contentMargin * 2)
+  readonly property int contentHeight: Math.max(0, card.height - root.contentMargin * 2)
+  readonly property int innerWidth: Math.max(0, card.width - root.contentMargin * 2)
   readonly property int listWidth: root.previewActive ? Math.max(Style.space(300), Math.round(root.innerWidth * 0.40)) : root.innerWidth
   readonly property int previewWidth: root.previewActive ? Math.max(0, root.innerWidth - root.listWidth - root.gap) : 0
   readonly property int listHeight: Math.max(0, root.contentHeight - root.headerHeight - root.listGap)
@@ -218,17 +219,23 @@ Item {
     if (root.cycleMode && root.rows.length > 1 && Model.isCurrent(root.rows[0]))
       root.selectedIndex = direction < 0 ? root.rows.length - 1 : 1
 
+    root.geometryAnimationsReady = false
     root.opened = true
-    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+    Qt.callLater(function() {
+      root.geometryAnimationsReady = true
+      keyCatcher.forceActiveFocus()
+    })
   }
 
   function close() {
+    root.geometryAnimationsReady = false
     root.opened = false
     root.cycleMode = false
   }
 
   // User-initiated dismissal also drops the host's openPanelIds entry.
   function dismiss() {
+    root.geometryAnimationsReady = false
     root.opened = false
     root.cycleMode = false
     if (root.shell && typeof root.shell.hide === "function")
@@ -273,6 +280,16 @@ Item {
       width: root.cardWidth
       height: root.cardHeight
       radius: root.cornerRadius
+
+      Behavior on width {
+        enabled: root.geometryAnimationsReady
+        NumberAnimation { duration: 100; easing.type: Easing.OutCubic }
+      }
+
+      Behavior on height {
+        enabled: root.geometryAnimationsReady
+        NumberAnimation { duration: 100; easing.type: Easing.OutCubic }
+      }
       anchors.centerIn: parent
       color: root.background
       borderSpec: root.borderSpec
